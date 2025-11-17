@@ -3,8 +3,6 @@ const cors = require("cors");
 const multer = require("multer");
 const XLSX = require("xlsx");
 const fs = require("fs");
-const path = require("path");
-const { v4: uuidv4 } = require("uuid");
 const puppeteer = require("puppeteer");
 
 const app = express();
@@ -16,7 +14,7 @@ app.use(cors());
 app.use(express.json());
 
 // ================================
-// MULTER (SUBIDA DE EXCEL)
+// MULTER (SUBIDA DE ARCHIVOS)
 // ================================
 const upload = multer({ dest: "/tmp" });
 
@@ -30,13 +28,12 @@ app.get("/health", (req, res) => {
 // ================================
 // SSE (EVENT STREAM)
 // ================================
-function sendSSE(res, event, data) {
-  res.write(`event: ${event}\n`);
+function sendSSE(res, data) {
   res.write(`data: ${JSON.stringify(data)}\n\n`);
 }
 
 // ================================
-// PROCESAR EXCEL
+// RUTA PRINCIPAL: /api/process
 // ================================
 app.post("/api/process", upload.single("file"), async (req, res) => {
   console.log("📥 Archivo recibido.");
@@ -46,7 +43,7 @@ app.post("/api/process", upload.single("file"), async (req, res) => {
     return res.status(400).json({ error: "No se recibió archivo" });
   }
 
-  // SSE Response
+  // Configurar SSE
   res.setHeader("Content-Type", "text/event-stream");
   res.setHeader("Cache-Control", "no-cache");
   res.setHeader("Connection", "keep-alive");
@@ -56,7 +53,7 @@ app.post("/api/process", upload.single("file"), async (req, res) => {
     // Leer Excel
     const workbook = XLSX.readFile(req.file.path);
     const sheet = workbook.Sheets[workbook.SheetNames[0]];
-    const rows = XLSX.utils.sheet_to_json(sheet); // CUIT y clave
+    const rows = XLSX.utils.sheet_to_json(sheet);
 
     const total = rows.length;
     const results = [];
@@ -76,72 +73,64 @@ app.post("/api/process", upload.single("file"), async (req, res) => {
 
     const page = await browser.newPage();
 
+    // Procesar fila por fila
     for (let i = 0; i < rows.length; i++) {
-      const { CUIT, CLAVE } = rows[i];
+      const row = rows[i];
 
-      // ENVIAR PROGRESO AL FRONTEND
-      res.write(
-        `data: ${JSON.stringify({
-          type: "progress",
-          current: i + 1,
-          total,
-          cuit: CUIT
-        })}\n\n`
-      );
+      const CUIT = row.CUIT || row.cuit || row["cuit"];
+      const CLAVE = row.CLAVE || row.clave || row["clave"];
 
-      // Aquí va tu lógica de scraping
-      // await loginAfip(page, CUIT, CLAVE);
-      // const data = await scrapeAfip(page);
+      console.log(`🔎 Procesando CUIT ${CUIT}`);
 
-      // Por ahora simulo datos
+      // Enviar progreso
+      sendSSE(res, {
+        type: "progress",
+        current: i + 1,
+        total,
+        cuit: CUIT
+      });
+
+      // ================================
+      // SIMULACIÓN (remplazá con tu scraping real)
+      // ================================
       await new Promise((r) => setTimeout(r, 800));
-      results.push({ cuit: CUIT, success: true, data: { ejemplo: true } });
+
+      results.push({
+        cuit: CUIT,
+        success: true,
+        data: {
+          ejemplo: "OK",
+        },
+      });
     }
 
     await browser.close();
 
-    // ENVIAR TERMINADO
-    res.write(
-      `data: ${JSON.stringify({
-        type: "complete",
-        results
-      })}\n\n`
-    );
+    // Enviar resultados finales
+    sendSSE(res, {
+      type: "complete",
+      results,
+    });
 
     res.end();
 
+    // Borrar archivo subido
     fs.unlinkSync(req.file.path);
 
   } catch (error) {
     console.error("❌ Error:", error);
 
-    res.write(
-      `data: ${JSON.stringify({
-        type: "error",
-        message: error.message
-      })}\n\n`
-    );
-
-    res.end();
-  }
-});
-
-    // Borrar archivo temporal
-    fs.unlinkSync(req.file.path);
-
-  } catch (error) {
-    console.error("❌ Error procesando:", error);
-
-    try {
-      sendSSE(res, "error", { message: error.message });
-    } catch (_) {}
+    sendSSE(res, {
+      type: "error",
+      message: error.message,
+    });
 
     res.end();
   }
 });
 
 // ================================
-// SERVIDOR — FIX PARA RENDER (PORT DINÁMICO)
+// INICIO DEL SERVIDOR
 // ================================
 const PORT = process.env.PORT || 10000;
 
