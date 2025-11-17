@@ -27,7 +27,7 @@ export default function App() {
     setResults(null);
 
     const formData = new FormData();
-    formData.append('excel', file);
+    formData.append('file', file);
 
     try {
       // Conectar con tu backend
