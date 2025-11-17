@@ -20,55 +20,56 @@ export default function App() {
     setFile(uploadedFile);
   };
 
-  const processExcel = async () => {
-    if (!file) return;
+const processExcel = async () => {
+  if (!file) return;
 
-    setProcessing(true);
-    setResults(null);
+  setProcessing(true);
+  setResults(null);
 
-    const formData = new FormData();
-    formData.append('file', file);
+  const formData = new FormData();
+  formData.append("file", file); // ← CAMBIO CLAVE
 
-    try {
-      // Conectar con tu backend
-      const response = await fetch('https://initial-commit-afip-automation-backend.onrender.com/api/process', {
-        method: 'POST',
+  try {
+    const response = await fetch(
+      "https://initial-commit-afip-automation-backend.onrender.com/api/process",
+      {
+        method: "POST",
         body: formData,
-      });
+      }
+    );
 
-      if (!response.ok) throw new Error('Error en el servidor');
+    if (!response.ok) throw new Error("Error en el servidor");
 
-      // Stream de progreso (si implementas SSE)
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
 
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
 
-        const chunk = decoder.decode(value);
-        const lines = chunk.split('\n');
+      const chunk = decoder.decode(value);
+      const lines = chunk.split("\n");
 
-        for (const line of lines) {
-          if (line.startsWith('data: ')) {
-            const data = JSON.parse(line.slice(6));
-            
-            if (data.type === 'progress') {
-              setCurrentClient(data.cuit);
-              setProgress({ current: data.current, total: data.total });
-            } else if (data.type === 'complete') {
-              setResults(data.results);
-              setProcessing(false);
-            }
+      for (const line of lines) {
+        if (line.startsWith("data: ")) {
+          const data = JSON.parse(line.slice(6));
+
+          if (data.type === "progress") {
+            setCurrentClient(data.cuit);
+            setProgress({ current: data.current, total: data.total });
+          } else if (data.type === "complete") {
+            setResults(data.results);
+            setProcessing(false);
           }
         }
       }
-    } catch (error) {
-      console.error('Error:', error);
-      alert('Error al procesar: ' + error.message);
-      setProcessing(false);
     }
-  };
+  } catch (error) {
+    console.error("Error:", error);
+    alert("Error al procesar: " + error.message);
+    setProcessing(false);
+  }
+};
 
   const downloadResults = () => {
     if (!results) return;
