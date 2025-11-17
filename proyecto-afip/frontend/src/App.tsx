@@ -1,12 +1,17 @@
 import React, { useState } from 'react';
 import { Upload, FileSpreadsheet, Loader2, CheckCircle, XCircle, Download } from 'lucide-react';
 
-export default function App() {
+export default function AFIPAutomation() {
   const [file, setFile] = useState(null);
   const [processing, setProcessing] = useState(false);
   const [results, setResults] = useState(null);
   const [currentClient, setCurrentClient] = useState('');
   const [progress, setProgress] = useState({ current: 0, total: 0 });
+  const [error, setError] = useState(null);
+
+  // ⚠️ IMPORTANTE: Reemplaza esta URL con la de tu Render
+  const BACKEND_URL = 'https://initial-commit-afip-automation-backend.onrender.com';
+  // Ejemplo: const BACKEND_URL = 'https://afip-backend-abc123.onrender.com';
 
   const handleFileUpload = async (e) => {
     const uploadedFile = e.target.files[0];
@@ -18,68 +23,104 @@ export default function App() {
     }
 
     setFile(uploadedFile);
+    setError(null);
   };
 
-const processExcel = async () => {
-  if (!file) return;
+  const processExcel = async () => {
+    if (!file) return;
 
-  setProcessing(true);
-  setResults(null);
+    setProcessing(true);
+    setResults(null);
+    setError(null);
 
-  const formData = new FormData();
-  formData.append("file", file); // ← CAMBIO CLAVE
+    const formData = new FormData();
+    formData.append('excel', file);
 
-  try {
-    const response = await fetch(
-      "https://initial-commit-afip-automation-backend.onrender.com/api/process",
-      {
-        method: "POST",
+    try {
+      console.log('🚀 Enviando a:', `${BACKEND_URL}/api/process`);
+
+      const response = await fetch(`${BACKEND_URL}/api/process`, {
+        method: 'POST',
         body: formData,
+        // No incluir Content-Type, el navegador lo configura automáticamente con boundary
+      });
+
+      console.log('📡 Respuesta recibida:', response.status);
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Error ${response.status}: ${errorText}`);
       }
-    );
 
-    if (!response.ok) throw new Error("Error en el servidor");
+      // Leer el stream SSE
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
 
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder();
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
 
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
 
-      const chunk = decoder.decode(value);
-      const lines = chunk.split("\n");
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            try {
+              const data = JSON.parse(line.slice(6));
+              
+              console.log('📊 Evento recibido:', data.type);
 
-      for (const line of lines) {
-        if (line.startsWith("data: ")) {
-          const data = JSON.parse(line.slice(6));
-
-          if (data.type === "progress") {
-            setCurrentClient(data.cuit);
-            setProgress({ current: data.current, total: data.total });
-          } else if (data.type === "complete") {
-            setResults(data.results);
-            setProcessing(false);
+              if (data.type === 'progress') {
+                setCurrentClient(data.cuit);
+                setProgress({ current: data.current, total: data.total });
+              } else if (data.type === 'complete') {
+                setResults(data.results);
+                setProcessing(false);
+                console.log('✅ Proceso completado');
+              } else if (data.type === 'error') {
+                throw new Error(data.error);
+              }
+            } catch (parseError) {
+              console.error('Error parseando JSON:', parseError);
+            }
           }
         }
       }
+    } catch (error) {
+      console.error('❌ Error:', error);
+      setError(error.message);
+      setProcessing(false);
+      alert('Error al procesar: ' + error.message);
     }
-  } catch (error) {
-    console.error("Error:", error);
-    alert("Error al procesar: " + error.message);
-    setProcessing(false);
-  }
-};
+  };
 
   const downloadResults = () => {
     if (!results) return;
 
-    const blob = new Blob([JSON.stringify(results, null, 2)], { type: 'application/json' });
+    const dataStr = JSON.stringify(results, null, 2);
+    const blob = new Blob([dataStr], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
     a.download = `resultados_afip_${new Date().toISOString().split('T')[0]}.json`;
     a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  // Test de conexión
+  const testConnection = async () => {
+    try {
+      console.log('🔍 Probando conexión a:', `${BACKEND_URL}/health`);
+      const response = await fetch(`${BACKEND_URL}/health`);
+      const data = await response.json();
+      console.log('✅ Respuesta del servidor:', data);
+      alert(`✅ Conexión exitosa!\nServidor: ${data.status}\nTimestamp: ${data.timestamp}`);
+    } catch (error) {
+      console.error('❌ Error de conexión:', error);
+      alert(`❌ Error de conexión:\n${error.message}\n\nVerifica que la URL del backend sea correcta.`);
+    }
   };
 
   return (
@@ -92,6 +133,30 @@ const processExcel = async () => {
               Automatización AFIP/ARCA
             </h1>
           </div>
+
+          {/* Indicador de URL del backend */}
+          <div className="mb-4 p-3 bg-gray-100 rounded border border-gray-300">
+            <div className="flex items-center justify-between">
+              <div>
+                <span className="text-sm text-gray-600">Backend conectado a:</span>
+                <code className="ml-2 text-sm font-mono text-indigo-600">{BACKEND_URL}</code>
+              </div>
+              <button
+                onClick={testConnection}
+                className="px-3 py-1 text-sm bg-indigo-100 text-indigo-700 rounded hover:bg-indigo-200"
+              >
+                Probar Conexión
+              </button>
+            </div>
+          </div>
+
+          {/* Error display */}
+          {error && (
+            <div className="mb-4 p-4 bg-red-50 border-l-4 border-red-500 rounded">
+              <h3 className="font-semibold text-red-900 mb-2">Error</h3>
+              <p className="text-sm text-red-800">{error}</p>
+            </div>
+          )}
 
           <div className="mb-8 p-4 bg-blue-50 border-l-4 border-blue-500 rounded">
             <h3 className="font-semibold text-blue-900 mb-2">Formato del Excel:</h3>
@@ -161,13 +226,13 @@ const processExcel = async () => {
                   Procesando cliente {progress.current} de {progress.total}
                 </span>
                 <span className="text-sm text-indigo-700">
-                  {Math.round((progress.current / progress.total) * 100)}%
+                  {progress.total > 0 ? Math.round((progress.current / progress.total) * 100) : 0}%
                 </span>
               </div>
               <div className="w-full bg-indigo-200 rounded-full h-3 mb-3">
                 <div
                   className="bg-indigo-600 h-3 rounded-full transition-all duration-500"
-                  style={{ width: `${(progress.current / progress.total) * 100}%` }}
+                  style={{ width: `${progress.total > 0 ? (progress.current / progress.total) * 100 : 0}%` }}
                 />
               </div>
               <p className="text-sm text-indigo-800">
