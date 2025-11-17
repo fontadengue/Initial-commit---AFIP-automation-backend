@@ -1,18 +1,16 @@
 {
-  "name": "proyecto-afip",
+  "name": "frontend-afip",
   "version": "1.0.0",
-  "main": "server.js",
-  "type": "commonjs",
-  "scripts": {
-    "start": "node server.js"
-  },
+  "private": true,
   "dependencies": {
-    "express": "^5.1.0",
-    "multer": "^1.4.5-lts.1",
-    "xlsx": "^0.18.5",
-    "cors": "^2.8.5",
-    "puppeteer": "^22.4.1",
-    "axios": "^1.6.0",
-    "dotenv": "^16.4.0"
+    "react": "^18.3.0",
+    "react-dom": "^18.3.0",
+    "react-scripts": "5.0.1"
+  },
+  "scripts": {
+    "start": "react-scripts start",
+    "build": "react-scripts build",
+    "test": "react-scripts test",
+    "eject": "react-scripts eject"
   }
 }
