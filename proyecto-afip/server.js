@@ -38,7 +38,7 @@ function sendSSE(res, event, data) {
 // ================================
 // PROCESAR EXCEL
 // ================================
-app.post("/api/process", upload.single("excel"), async (req, res) => {
+app.post("/api/process", upload.single("file"), async (req, res) => {
   console.log("📥 Archivo recibido.");
 
   if (!req.file) {
@@ -46,24 +46,22 @@ app.post("/api/process", upload.single("excel"), async (req, res) => {
     return res.status(400).json({ error: "No se recibió archivo" });
   }
 
-  // Configurar SSE
+  // SSE Response
   res.setHeader("Content-Type", "text/event-stream");
   res.setHeader("Cache-Control", "no-cache");
   res.setHeader("Connection", "keep-alive");
   res.flushHeaders();
 
   try {
-    sendSSE(res, "status", { message: "Leyendo archivo Excel..." });
-
+    // Leer Excel
     const workbook = XLSX.readFile(req.file.path);
     const sheet = workbook.Sheets[workbook.SheetNames[0]];
-    const rows = XLSX.utils.sheet_to_json(sheet);
+    const rows = XLSX.utils.sheet_to_json(sheet); // CUIT y clave
 
-    sendSSE(res, "status", { message: "Lanzando navegador..." });
+    const total = rows.length;
+    const results = [];
 
-    // ================================
-    // CONFIGURACIÓN DE PUPPETEER PARA RENDER
-    // ================================
+    // Lanzar Puppeteer
     const browser = await puppeteer.launch({
       headless: true,
       args: [
@@ -78,22 +76,55 @@ app.post("/api/process", upload.single("excel"), async (req, res) => {
 
     const page = await browser.newPage();
 
-    // Procesar filas una por una
     for (let i = 0; i < rows.length; i++) {
-      sendSSE(res, "status", { message: `Procesando fila ${i + 1}...` });
+      const { CUIT, CLAVE } = rows[i];
 
-      // Tu lógica de scraping acá:
-      // await page.goto("https://...");
+      // ENVIAR PROGRESO AL FRONTEND
+      res.write(
+        `data: ${JSON.stringify({
+          type: "progress",
+          current: i + 1,
+          total,
+          cuit: CUIT
+        })}\n\n`
+      );
 
-      await new Promise(r => setTimeout(r, 500)); // Simulación
+      // Aquí va tu lógica de scraping
+      // await loginAfip(page, CUIT, CLAVE);
+      // const data = await scrapeAfip(page);
+
+      // Por ahora simulo datos
+      await new Promise((r) => setTimeout(r, 800));
+      results.push({ cuit: CUIT, success: true, data: { ejemplo: true } });
     }
-
-    sendSSE(res, "done", { message: "Procesamiento finalizado." });
 
     await browser.close();
 
-    // Fin del stream
+    // ENVIAR TERMINADO
+    res.write(
+      `data: ${JSON.stringify({
+        type: "complete",
+        results
+      })}\n\n`
+    );
+
     res.end();
+
+    fs.unlinkSync(req.file.path);
+
+  } catch (error) {
+    console.error("❌ Error:", error);
+
+    res.write(
+      `data: ${JSON.stringify({
+        type: "error",
+        message: error.message
+      })}\n\n`
+    );
+
+    res.end();
+  }
+});
 
     // Borrar archivo temporal
     fs.unlinkSync(req.file.path);
