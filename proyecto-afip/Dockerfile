@@ -32,9 +32,9 @@ ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true \
 
 WORKDIR /app
 
-COPY package*.json ./
+COPY package.json ./
 
-RUN npm ci --only=production && npm cache clean --force
+RUN npm install --production && npm cache clean --force
 
 COPY . .
 
