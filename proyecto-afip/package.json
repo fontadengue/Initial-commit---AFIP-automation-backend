@@ -2,5 +2,8 @@
   "name": "proyecto-afip",
   "lockfileVersion": 3,
   "requires": true,
-  "packages": {}
+  "packages": {},
+  "dependencies": {
+    "express": "^5.1.0"
+  }
 }
