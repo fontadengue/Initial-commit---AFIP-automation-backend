@@ -2,20 +2,19 @@ import React, { useState } from 'react';
 import { Upload, FileSpreadsheet, Loader2, CheckCircle, XCircle, Download } from 'lucide-react';
 
 export default function AFIPAutomation() {
-  const [file, setFile] = useState(null);
+  const [file, setFile] = useState<File | null>(null);
   const [processing, setProcessing] = useState(false);
-  const [results, setResults] = useState(null);
+  const [results, setResults] = useState<any[] | null>(null);
   const [currentClient, setCurrentClient] = useState('');
   const [numCliente, setNumCliente] = useState('');
   const [progress, setProgress] = useState({ current: 0, total: 0 });
-  const [error, setError] = useState(null);
-  const [excelData, setExcelData] = useState(null);
+  const [error, setError] = useState<string | null>(null);
+  const [excelData, setExcelData] = useState<{ base64: string; filename: string } | null>(null);
 
-  // ⚠️ REEMPLAZA CON TU URL DE RENDER
   const BACKEND_URL = 'https://initial-commit-afip-automation-backend.onrender.com';
 
-  const handleFileUpload = async (e) => {
-    const uploadedFile = e.target.files[0];
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const uploadedFile = e.target.files?.[0];
     if (!uploadedFile) return;
 
     if (!uploadedFile.name.endsWith('.xlsx') && !uploadedFile.name.endsWith('.xls')) {
@@ -41,22 +40,23 @@ export default function AFIPAutomation() {
     formData.append('excel', file);
 
     try {
-      console.log('🚀 Enviando a:', `${BACKEND_URL}/api/process`);
+      console.log('Enviando a:', `${BACKEND_URL}/api/process`);
 
       const response = await fetch(`${BACKEND_URL}/api/process`, {
         method: 'POST',
         body: formData,
       });
 
-      console.log('📡 Respuesta recibida:', response.status);
+      console.log('Respuesta recibida:', response.status);
 
       if (!response.ok) {
         const errorText = await response.text();
         throw new Error(`Error ${response.status}: ${errorText}`);
       }
 
-      // Leer el stream SSE
-      const reader = response.body.getReader();
+      const reader = response.body?.getReader();
+      if (!reader) throw new Error('No se pudo leer la respuesta');
+
       const decoder = new TextDecoder();
       let buffer = '';
 
@@ -73,7 +73,7 @@ export default function AFIPAutomation() {
             try {
               const data = JSON.parse(line.slice(6));
               
-              console.log('📊 Evento recibido:', data.type);
+              console.log('Evento recibido:', data.type);
 
               if (data.type === 'progress') {
                 setCurrentClient(data.cuit);
@@ -86,7 +86,7 @@ export default function AFIPAutomation() {
                   filename: data.filename
                 });
                 setProcessing(false);
-                console.log('✅ Proceso completado');
+                console.log('Proceso completado');
               } else if (data.type === 'error') {
                 throw new Error(data.message);
               }
@@ -96,8 +96,8 @@ export default function AFIPAutomation() {
           }
         }
       }
-    } catch (error) {
-      console.error('❌ Error:', error);
+    } catch (error: any) {
+      console.error('Error:', error);
       setError(error.message);
       setProcessing(false);
       alert('Error al procesar: ' + error.message);
@@ -107,7 +107,6 @@ export default function AFIPAutomation() {
   const downloadExcel = () => {
     if (!excelData) return;
 
-    // Convertir base64 a blob
     const byteCharacters = atob(excelData.base64);
     const byteNumbers = new Array(byteCharacters.length);
     for (let i = 0; i < byteCharacters.length; i++) {
@@ -118,7 +117,6 @@ export default function AFIPAutomation() {
       type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' 
     });
 
-    // Crear enlace de descarga
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
@@ -131,14 +129,14 @@ export default function AFIPAutomation() {
 
   const testConnection = async () => {
     try {
-      console.log('🔍 Probando conexión a:', `${BACKEND_URL}/health`);
+      console.log('Probando conexion a:', `${BACKEND_URL}/health`);
       const response = await fetch(`${BACKEND_URL}/health`);
       const data = await response.json();
-      console.log('✅ Respuesta del servidor:', data);
-      alert(`✅ Conexión exitosa!\nServidor: ${data.status}\nTimestamp: ${data.timestamp}`);
-    } catch (error) {
-      console.error('❌ Error de conexión:', error);
-      alert(`❌ Error de conexión:\n${error.message}\n\nVerifica que la URL del backend sea correcta.`);
+      console.log('Respuesta del servidor:', data);
+      alert(`Conexion exitosa!\nServidor: ${data.status}\nTimestamp: ${data.timestamp}`);
+    } catch (error: any) {
+      console.error('Error de conexion:', error);
+      alert(`Error de conexion:\n${error.message}\n\nVerifica que la URL del backend sea correcta.`);
     }
   };
 
@@ -149,11 +147,10 @@ export default function AFIPAutomation() {
           <div className="flex items-center gap-3 mb-6">
             <FileSpreadsheet className="w-10 h-10 text-indigo-600" />
             <h1 className="text-3xl font-bold text-gray-800">
-              Automatización AFIP - Extracción de Nombres
+              Automatizacion AFIP - Extraccion de Nombres
             </h1>
           </div>
 
-          {/* Indicador de URL del backend */}
           <div className="mb-4 p-3 bg-gray-100 rounded border border-gray-300">
             <div className="flex items-center justify-between">
               <div>
@@ -164,12 +161,11 @@ export default function AFIPAutomation() {
                 onClick={testConnection}
                 className="px-3 py-1 text-sm bg-indigo-100 text-indigo-700 rounded hover:bg-indigo-200"
               >
-                Probar Conexión
+                Probar Conexion
               </button>
             </div>
           </div>
 
-          {/* Error display */}
           {error && (
             <div className="mb-4 p-4 bg-red-50 border-l-4 border-red-500 rounded">
               <h3 className="font-semibold text-red-900 mb-2">Error</h3>
@@ -182,18 +178,17 @@ export default function AFIPAutomation() {
             <ul className="text-sm text-blue-800 space-y-1">
               <li>• <strong>Columna A:</strong> CUIT (sin guiones, ej: 20345678901)</li>
               <li>• <strong>Columna B:</strong> Clave AFIP</li>
-              <li>• <strong>Columna C:</strong> Número de Cliente</li>
+              <li>• <strong>Columna C:</strong> Numero de Cliente</li>
               <li>• Primera fila: encabezados (se ignoran)</li>
             </ul>
             <div className="mt-3 p-3 bg-green-50 border border-green-300 rounded">
-              <p className="text-sm font-semibold text-green-900">📊 Excel de salida:</p>
+              <p className="text-sm font-semibold text-green-900">Excel de salida:</p>
               <p className="text-sm text-green-800">
-                Columna A: Número de Cliente | Columna B: Nombre del Contribuyente
+                Columna A: Numero de Cliente | Columna B: Nombre del Contribuyente
               </p>
             </div>
           </div>
 
-          {/* Upload Zone */}
           <div className="mb-6">
             <label className="block w-full">
               <div className={`border-2 border-dashed rounded-lg p-12 text-center cursor-pointer transition-all ${
@@ -217,14 +212,13 @@ export default function AFIPAutomation() {
                     <p className="text-lg font-semibold text-gray-700">
                       Haz clic para seleccionar archivo Excel
                     </p>
-                    <p className="text-sm text-gray-500 mt-2">O arrastra y suelta aquí</p>
+                    <p className="text-sm text-gray-500 mt-2">O arrastra y suelta aqui</p>
                   </div>
                 )}
               </div>
             </label>
           </div>
 
-          {/* Process Button */}
           <button
             onClick={processExcel}
             disabled={!file || processing}
@@ -240,11 +234,10 @@ export default function AFIPAutomation() {
                 Procesando...
               </span>
             ) : (
-              'Iniciar Extracción de Nombres'
+              'Iniciar Extraccion de Nombres'
             )}
           </button>
 
-          {/* Progress */}
           {processing && (
             <div className="mt-6 p-6 bg-indigo-50 rounded-lg border border-indigo-200">
               <div className="flex items-center justify-between mb-3">
@@ -268,7 +261,6 @@ export default function AFIPAutomation() {
             </div>
           )}
 
-          {/* Results */}
           {results && (
             <div className="mt-6">
               <div className="flex items-center justify-between mb-4">
@@ -294,7 +286,7 @@ export default function AFIPAutomation() {
                     </tr>
                   </thead>
                   <tbody>
-                    {results.map((result, idx) => (
+                    {results.map((result: any, idx: number) => (
                       <tr key={idx} className="border-b border-gray-200">
                         <td className="p-2 font-mono">{result.numCliente}</td>
                         <td className="p-2">
@@ -314,8 +306,8 @@ export default function AFIPAutomation() {
         </div>
 
         <div className="mt-6 text-center text-sm text-gray-600">
-          <p>⚠️ Esta herramienta maneja información sensible. Úsala de forma responsable.</p>
-          <p className="mt-1">🔒 Las credenciales se procesan de forma segura y no se almacenan.</p>
+          <p>Esta herramienta maneja informacion sensible. Usala de forma responsable.</p>
+          <p className="mt-1">Las credenciales se procesan de forma segura y no se almacenan.</p>
         </div>
       </div>
     </div>
