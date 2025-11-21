@@ -35,13 +35,17 @@ function sendSSE(res, data) {
 // ================================
 // RUTA PRINCIPAL: /api/process
 // ================================
-app.post("/api/process", upload.single("file"), async (req, res) => {
+app.post("/api/process", upload.single("excel"), async (req, res) => {
+  // ☝️ CAMBIADO DE "file" A "excel"
+  
   console.log("📥 Archivo recibido.");
 
   if (!req.file) {
     console.log("❌ No se recibió archivo.");
     return res.status(400).json({ error: "No se recibió archivo" });
   }
+
+  console.log(`📁 Archivo: ${req.file.originalname} (${req.file.size} bytes)`);
 
   // Configurar SSE
   res.setHeader("Content-Type", "text/event-stream");
@@ -53,7 +57,9 @@ app.post("/api/process", upload.single("file"), async (req, res) => {
     // Leer Excel
     const workbook = XLSX.readFile(req.file.path);
     const sheet = workbook.Sheets[workbook.SheetNames[0]];
-    const rows = XLSX.utils.sheet_to_json(sheet);
+    const rows = XLSX.utils.sheet_to_json(sheet, { range: 1 }); // Saltar primera fila
+
+    console.log(`📊 ${rows.length} filas encontradas`);
 
     const total = rows.length;
     const results = [];
@@ -77,10 +83,11 @@ app.post("/api/process", upload.single("file"), async (req, res) => {
     for (let i = 0; i < rows.length; i++) {
       const row = rows[i];
 
-      const CUIT = row.CUIT || row.cuit || row["cuit"];
-      const CLAVE = row.CLAVE || row.clave || row["clave"];
+      // Buscar CUIT y CLAVE en diferentes formatos posibles
+      const CUIT = row.CUIT || row.cuit || row["CUIT"] || row["cuit"] || Object.values(row)[0];
+      const CLAVE = row.CLAVE || row.clave || row["CLAVE"] || row["clave"] || Object.values(row)[1];
 
-      console.log(`🔎 Procesando CUIT ${CUIT}`);
+      console.log(`🔎 [${i + 1}/${total}] Procesando CUIT ${CUIT}`);
 
       // Enviar progreso
       sendSSE(res, {
@@ -90,23 +97,38 @@ app.post("/api/process", upload.single("file"), async (req, res) => {
         cuit: CUIT
       });
 
-      // ================================
-      // SIMULACIÓN (remplazá con tu scraping real)
-      // ================================
-      await new Promise((r) => setTimeout(r, 800));
+      try {
+        // ================================
+        // AQUÍ VA TU LÓGICA DE SCRAPING REAL
+        // ================================
+        
+        // Por ahora simulación
+        await new Promise((r) => setTimeout(r, 800));
 
-      results.push({
-        cuit: CUIT,
-        success: true,
-        data: {
-          ejemplo: "OK",
-        },
-      });
+        results.push({
+          cuit: CUIT,
+          success: true,
+          data: {
+            timestamp: new Date().toISOString(),
+            mensaje: "Datos extraídos correctamente (simulación)"
+          },
+        });
+
+      } catch (error) {
+        console.error(`❌ Error procesando ${CUIT}:`, error.message);
+        results.push({
+          cuit: CUIT,
+          success: false,
+          error: error.message
+        });
+      }
     }
 
     await browser.close();
 
     // Enviar resultados finales
+    console.log(`✅ Proceso completado: ${results.filter(r => r.success).length}/${total} exitosos`);
+    
     sendSSE(res, {
       type: "complete",
       results,
@@ -118,7 +140,7 @@ app.post("/api/process", upload.single("file"), async (req, res) => {
     fs.unlinkSync(req.file.path);
 
   } catch (error) {
-    console.error("❌ Error:", error);
+    console.error("❌ Error general:", error);
 
     sendSSE(res, {
       type: "error",
@@ -126,6 +148,11 @@ app.post("/api/process", upload.single("file"), async (req, res) => {
     });
 
     res.end();
+    
+    // Borrar archivo si existe
+    if (req.file && fs.existsSync(req.file.path)) {
+      fs.unlinkSync(req.file.path);
+    }
   }
 });
 
