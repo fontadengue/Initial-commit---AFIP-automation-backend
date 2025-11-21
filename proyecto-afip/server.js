@@ -15,7 +15,7 @@ app.use(cors());
 app.use(express.json());
 
 // ================================
-// MULTER (SUBIDA DE ARCHIVOS)
+// MULTER
 // ================================
 const upload = multer({ dest: "/tmp" });
 
@@ -27,105 +27,102 @@ app.get("/health", (req, res) => {
 });
 
 // ================================
-// SSE (EVENT STREAM)
+// SSE
 // ================================
 function sendSSE(res, data) {
   res.write(`data: ${JSON.stringify(data)}\n\n`);
 }
 
 // ================================
-// FUNCIÓN HELPER: SLEEP
+// SLEEP
 // ================================
 function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
 // ================================
-// FUNCIÓN: PROCESAR UN CLIENTE EN AFIP
+// FUNCIÓN PRINCIPAL AFIP (CSS ONLY)
 // ================================
 async function procesarClienteAFIP(page, cuit, clave) {
   try {
-    console.log(`  → Navegando a login de AFIP...`);
-    
-    await page.goto('https://auth.afip.gob.ar/contribuyente_/login.xhtml', {
-      waitUntil: 'networkidle2',
+    console.log("→ Entrando al login...");
+
+    await page.goto("https://auth.afip.gob.ar/contribuyente_/login.xhtml", {
+      waitUntil: "networkidle2",
       timeout: 30000
     });
 
     await sleep(1000);
 
-    // 2. Ingresar CUIT
-    console.log(`  → Ingresando CUIT: ${cuit}`);
-    
-    await page.waitForXPath('/html/body/main/div/div/div/div/div/div/form/div[1]/input', { timeout: 10000 });
-    const inputCuit = await page.$x('/html/body/main/div/div/div/div/div/div/form/div[1]/input');
-    
-    if (inputCuit.length === 0) throw new Error('No se encontró el campo de CUIT');
-    
-    await inputCuit[0].click();
-    await sleep(300);
-    await inputCuit[0].type(cuit, { delay: 100 });
+    // CUIT
+    await page.waitForSelector('form input[type="text"]', { timeout: 10000 });
+    const inputCuit = await page.$('form input[type="text"]');
 
-    // 3. Click en Siguiente
-    console.log(`  → Click en Siguiente...`);
+    if (!inputCuit) throw new Error("No se encontró input de CUIT");
 
-    const btnSiguiente = await page.$x('/html/body/main/div/div/div/div/div/div/form/input[2]');
-    if (btnSiguiente.length === 0) throw new Error('No se encontró el botón Siguiente');
-    
-    await sleep(500);
-    await btnSiguiente[0].click();
+    await inputCuit.click();
+    await sleep(200);
+    await inputCuit.type(cuit, { delay: 90 });
 
-    await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 30000 });
+    // BOTÓN SIGUIENTE
+    await page.waitForSelector('form input[type="submit"]', { timeout: 10000 });
+    const btnSiguiente = await page.$('form input[type="submit"]');
 
-    // 4. Contraseña
-    console.log(`  → Ingresando contraseña...`);
-    
+    if (!btnSiguiente) throw new Error("No se encontró botón Siguiente");
+
+    await sleep(400);
+    await btnSiguiente.click();
+
+    await page.waitForNavigation({ waitUntil: "networkidle2", timeout: 30000 });
+
+    // CONTRASEÑA
     await page.waitForSelector('#F1\\:password', { timeout: 10000 });
     await page.click('#F1\\:password');
-    await sleep(300);
-    await page.type('#F1\\:password', clave, { delay: 100 });
+    await sleep(200);
+    await page.type('#F1\\:password', clave, { delay: 90 });
 
-    // 5. Click en Ingresar
-    console.log(`  → Click en Ingresar...`);
+    // BOTÓN INGRESAR
+    await page.waitForSelector('form div input[type="submit"]', { timeout: 10000 });
+    const btnIngresar = await page.$('form div input[type="submit"]');
 
-    const btnIngresar = await page.$x('/html/body/main/div/div/div/div/div/div/form/div/input[2]');
-    if (btnIngresar.length === 0) throw new Error('No se encontró el botón Ingresar');
+    if (!btnIngresar) throw new Error("No se encontró botón Ingresar");
 
-    await sleep(500);
-    await btnIngresar[0].click();
+    await sleep(400);
+    await btnIngresar.click();
 
-    await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 30000 });
+    await page.waitForNavigation({ waitUntil: "networkidle2", timeout: 30000 });
 
     await sleep(2000);
 
-    // 7. Extraer nombre
-    console.log(`  → Extrayendo nombre del contribuyente...`);
-    
-    await page.waitForXPath('/html/body/div/div/div[1]/header/nav/div/div[1]/div[2]/div/div[1]/div/strong', { timeout: 10000 });
-    const nombreElement = await page.$x('/html/body/div/div/div[1]/header/nav/div/div[1]/div[2]/div/div[1]/div/strong');
+    // NOMBRE CONTRIBUYENTE
+    await page.waitForSelector("header nav strong", { timeout: 10000 });
+    const nombreElem = await page.$("header nav strong");
 
-    if (nombreElement.length === 0) throw new Error('No se encontró el nombre en el dashboard');
+    if (!nombreElem) throw new Error("No se encontró el nombre del contribuyente");
 
-    const nombre = await page.evaluate(el => el.textContent.trim(), nombreElement[0]);
-    
-    console.log(`  ✓ Nombre extraído: ${nombre}`);
+    const nombre = await page.evaluate(el => el.textContent.trim(), nombreElem);
+
+    console.log("✓ Nombre extraído:", nombre);
 
     return { success: true, nombre };
 
   } catch (error) {
-    console.error(`  ✗ Error: ${error.message}`);
+    console.error("✗ Error en cliente:", error.message);
     return { success: false, error: error.message };
   }
 }
 
 // ================================
-// RUTA PRINCIPAL: /api/process
+// /api/process
 // ================================
 app.post("/api/process", upload.single("excel"), async (req, res) => {
-  console.log("📥 Archivo recibido.");
+  console.log("📥 Excel recibido.");
 
-  if (!req.file) return res.status(400).json({ error: "No se recibió archivo" });
+  if (!req.file) {
+    return res.status(400).json({ error: "No se recibió archivo" });
+  }
 
+  // SSE
   res.setHeader("Content-Type", "text/event-stream");
   res.setHeader("Cache-Control", "no-cache");
   res.setHeader("Connection", "keep-alive");
@@ -139,14 +136,14 @@ app.post("/api/process", upload.single("excel"), async (req, res) => {
     const sheet = workbook.Sheets[workbook.SheetNames[0]];
     const rows = XLSX.utils.sheet_to_json(sheet, { header: 1 });
 
-    const dataRows = rows.slice(1).filter(row => row.length >= 3);
-
-    console.log(`📊 ${dataRows.length} clientes encontrados`);
-
+    const dataRows = rows.slice(1).filter(r => r.length >= 3);
     const total = dataRows.length;
+
+    console.log(`📊 Filas encontradas: ${total}`);
+
     const resultados = [];
 
-    console.log('🚀 Iniciando navegador...');
+    // Navegador
     browser = await puppeteer.launch({
       headless: true,
       args: [
@@ -160,16 +157,15 @@ app.post("/api/process", upload.single("excel"), async (req, res) => {
     });
 
     const page = await browser.newPage();
-    await page.setViewport({ width: 1920, height: 1080 });
+    await page.setViewport({ width: 1600, height: 900 });
 
-    for (let i = 0; i < dataRows.length; i++) {
-      const [CUITraw, CLAVEraw, NUM_CLIENTEraw] = dataRows[i];
+    // LOOP CLIENTES
+    for (let i = 0; i < total; i++) {
+      const row = dataRows[i];
 
-      const CUIT = String(CUITraw || '').replace(/\D/g, '');
-      const CLAVE = String(CLAVEraw || '').trim();
-      const NUM_CLIENTE = String(NUM_CLIENTEraw || '').trim();
-
-      if (!CUIT || !CLAVE || !NUM_CLIENTE) continue;
+      const CUIT = String(row[0] || "").replace(/\D/g, "");
+      const CLAVE = String(row[1] || "");
+      const NUM_CLIENTE = String(row[2] || "");
 
       sendSSE(res, {
         type: "progress",
@@ -179,37 +175,38 @@ app.post("/api/process", upload.single("excel"), async (req, res) => {
         numCliente: NUM_CLIENTE
       });
 
-      const resultado = await procesarClienteAFIP(page, CUIT, CLAVE);
+      const r = await procesarClienteAFIP(page, CUIT, CLAVE);
 
       resultados.push({
         numCliente: NUM_CLIENTE,
-        nombre: resultado.success ? resultado.nombre : `ERROR: ${resultado.error}`
+        nombre: r.success ? r.nombre : `ERROR: ${r.error}`
       });
 
-      if (i < dataRows.length - 1) await sleep(2000 + Math.random() * 3000);
+      if (i < total - 1) {
+        await sleep(1500 + Math.random() * 2000);
+      }
     }
 
-    await browser.close();
-
+    // Crear Excel
     const datosExcel = [
-      ['Num de Cliente', 'Nombre del Cliente'],
+      ["NumCliente", "Nombre"],
       ...resultados.map(r => [r.numCliente, r.nombre])
     ];
 
-    const nuevoWorkbook = XLSX.utils.book_new();
-    const nuevaHoja = XLSX.utils.aoa_to_sheet(datosExcel);
-    XLSX.utils.book_append_sheet(nuevoWorkbook, nuevaHoja, 'Resultados');
+    const newBook = XLSX.utils.book_new();
+    const newSheet = XLSX.utils.aoa_to_sheet(datosExcel);
+    XLSX.utils.book_append_sheet(newBook, newSheet, "Resultados");
 
-    excelPath = path.join('/tmp', `resultados_${Date.now()}.xlsx`);
-    XLSX.writeFile(nuevoWorkbook, excelPath);
+    excelPath = `/tmp/resultados_${Date.now()}.xlsx`;
+    XLSX.writeFile(newBook, excelPath);
 
-    const excelBase64 = fs.readFileSync(excelPath).toString('base64');
+    const excelBase64 = fs.readFileSync(excelPath).toString("base64");
 
     sendSSE(res, {
       type: "complete",
       results: resultados,
       excel: excelBase64,
-      filename: `resultados_afip_${new Date().toISOString().split('T')[0]}.xlsx`
+      filename: `resultados_${new Date().toISOString().split("T")[0]}.xlsx`
     });
 
     res.end();
@@ -218,9 +215,13 @@ app.post("/api/process", upload.single("excel"), async (req, res) => {
     fs.unlinkSync(excelPath);
 
   } catch (error) {
-    console.error("❌ Error general:", error);
+    console.error("❌ ERROR GENERAL:", error);
 
-    sendSSE(res, { type: "error", message: error.message });
+    sendSSE(res, {
+      type: "error",
+      message: error.message
+    });
+
     res.end();
 
     if (browser) await browser.close();
