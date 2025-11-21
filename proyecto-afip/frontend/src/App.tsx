@@ -6,12 +6,13 @@ export default function AFIPAutomation() {
   const [processing, setProcessing] = useState(false);
   const [results, setResults] = useState(null);
   const [currentClient, setCurrentClient] = useState('');
+  const [numCliente, setNumCliente] = useState('');
   const [progress, setProgress] = useState({ current: 0, total: 0 });
   const [error, setError] = useState(null);
+  const [excelData, setExcelData] = useState(null);
 
-  // ⚠️ IMPORTANTE: Reemplaza esta URL con la de tu Render
+  // ⚠️ REEMPLAZA CON TU URL DE RENDER
   const BACKEND_URL = 'https://initial-commit-afip-automation-backend.onrender.com';
-  // Ejemplo: const BACKEND_URL = 'https://afip-backend-abc123.onrender.com';
 
   const handleFileUpload = async (e) => {
     const uploadedFile = e.target.files[0];
@@ -24,6 +25,8 @@ export default function AFIPAutomation() {
 
     setFile(uploadedFile);
     setError(null);
+    setResults(null);
+    setExcelData(null);
   };
 
   const processExcel = async () => {
@@ -32,6 +35,7 @@ export default function AFIPAutomation() {
     setProcessing(true);
     setResults(null);
     setError(null);
+    setExcelData(null);
 
     const formData = new FormData();
     formData.append('excel', file);
@@ -42,7 +46,6 @@ export default function AFIPAutomation() {
       const response = await fetch(`${BACKEND_URL}/api/process`, {
         method: 'POST',
         body: formData,
-        // No incluir Content-Type, el navegador lo configura automáticamente con boundary
       });
 
       console.log('📡 Respuesta recibida:', response.status);
@@ -74,13 +77,18 @@ export default function AFIPAutomation() {
 
               if (data.type === 'progress') {
                 setCurrentClient(data.cuit);
+                setNumCliente(data.numCliente || '');
                 setProgress({ current: data.current, total: data.total });
               } else if (data.type === 'complete') {
                 setResults(data.results);
+                setExcelData({
+                  base64: data.excel,
+                  filename: data.filename
+                });
                 setProcessing(false);
                 console.log('✅ Proceso completado');
               } else if (data.type === 'error') {
-                throw new Error(data.error);
+                throw new Error(data.message);
               }
             } catch (parseError) {
               console.error('Error parseando JSON:', parseError);
@@ -96,20 +104,31 @@ export default function AFIPAutomation() {
     }
   };
 
-  const downloadResults = () => {
-    if (!results) return;
+  const downloadExcel = () => {
+    if (!excelData) return;
 
-    const dataStr = JSON.stringify(results, null, 2);
-    const blob = new Blob([dataStr], { type: 'application/json' });
+    // Convertir base64 a blob
+    const byteCharacters = atob(excelData.base64);
+    const byteNumbers = new Array(byteCharacters.length);
+    for (let i = 0; i < byteCharacters.length; i++) {
+      byteNumbers[i] = byteCharacters.charCodeAt(i);
+    }
+    const byteArray = new Uint8Array(byteNumbers);
+    const blob = new Blob([byteArray], { 
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' 
+    });
+
+    // Crear enlace de descarga
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `resultados_afip_${new Date().toISOString().split('T')[0]}.json`;
+    a.download = excelData.filename;
+    document.body.appendChild(a);
     a.click();
+    document.body.removeChild(a);
     URL.revokeObjectURL(url);
   };
 
-  // Test de conexión
   const testConnection = async () => {
     try {
       console.log('🔍 Probando conexión a:', `${BACKEND_URL}/health`);
@@ -130,7 +149,7 @@ export default function AFIPAutomation() {
           <div className="flex items-center gap-3 mb-6">
             <FileSpreadsheet className="w-10 h-10 text-indigo-600" />
             <h1 className="text-3xl font-bold text-gray-800">
-              Automatización AFIP/ARCA
+              Automatización AFIP - Extracción de Nombres
             </h1>
           </div>
 
@@ -159,12 +178,19 @@ export default function AFIPAutomation() {
           )}
 
           <div className="mb-8 p-4 bg-blue-50 border-l-4 border-blue-500 rounded">
-            <h3 className="font-semibold text-blue-900 mb-2">Formato del Excel:</h3>
+            <h3 className="font-semibold text-blue-900 mb-2">Formato del Excel de entrada:</h3>
             <ul className="text-sm text-blue-800 space-y-1">
               <li>• <strong>Columna A:</strong> CUIT (sin guiones, ej: 20345678901)</li>
-              <li>• <strong>Columna B:</strong> Clave AFIP/ARCA</li>
-              <li>• Primera fila puede contener encabezados (se ignora)</li>
+              <li>• <strong>Columna B:</strong> Clave AFIP</li>
+              <li>• <strong>Columna C:</strong> Número de Cliente</li>
+              <li>• Primera fila: encabezados (se ignoran)</li>
             </ul>
+            <div className="mt-3 p-3 bg-green-50 border border-green-300 rounded">
+              <p className="text-sm font-semibold text-green-900">📊 Excel de salida:</p>
+              <p className="text-sm text-green-800">
+                Columna A: Número de Cliente | Columna B: Nombre del Contribuyente
+              </p>
+            </div>
           </div>
 
           {/* Upload Zone */}
@@ -214,7 +240,7 @@ export default function AFIPAutomation() {
                 Procesando...
               </span>
             ) : (
-              'Iniciar Proceso'
+              'Iniciar Extracción de Nombres'
             )}
           </button>
 
@@ -235,9 +261,10 @@ export default function AFIPAutomation() {
                   style={{ width: `${progress.total > 0 ? (progress.current / progress.total) * 100 : 0}%` }}
                 />
               </div>
-              <p className="text-sm text-indigo-800">
-                CUIT actual: <span className="font-mono font-semibold">{currentClient}</span>
-              </p>
+              <div className="text-sm text-indigo-800 space-y-1">
+                <p>Cliente: <span className="font-mono font-semibold">{numCliente}</span></p>
+                <p>CUIT: <span className="font-mono font-semibold">{currentClient}</span></p>
+              </div>
             </div>
           )}
 
@@ -250,11 +277,11 @@ export default function AFIPAutomation() {
                   Proceso Completado
                 </h2>
                 <button
-                  onClick={downloadResults}
-                  className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-all"
+                  onClick={downloadExcel}
+                  className="flex items-center gap-2 px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-all shadow-lg"
                 >
                   <Download className="w-5 h-5" />
-                  Descargar Resultados
+                  Descargar Excel
                 </button>
               </div>
 
@@ -262,35 +289,19 @@ export default function AFIPAutomation() {
                 <table className="w-full text-sm">
                   <thead className="bg-gray-200 sticky top-0">
                     <tr>
-                      <th className="p-2 text-left">CUIT</th>
-                      <th className="p-2 text-left">Estado</th>
-                      <th className="p-2 text-left">Datos Extraídos</th>
+                      <th className="p-2 text-left">Num Cliente</th>
+                      <th className="p-2 text-left">Nombre del Contribuyente</th>
                     </tr>
                   </thead>
                   <tbody>
                     {results.map((result, idx) => (
                       <tr key={idx} className="border-b border-gray-200">
-                        <td className="p-2 font-mono">{result.cuit}</td>
+                        <td className="p-2 font-mono">{result.numCliente}</td>
                         <td className="p-2">
-                          {result.success ? (
-                            <span className="flex items-center gap-1 text-green-700">
-                              <CheckCircle className="w-4 h-4" />
-                              Éxito
-                            </span>
+                          {result.nombre.startsWith('ERROR:') ? (
+                            <span className="text-red-600">{result.nombre}</span>
                           ) : (
-                            <span className="flex items-center gap-1 text-red-700">
-                              <XCircle className="w-4 h-4" />
-                              Error
-                            </span>
-                          )}
-                        </td>
-                        <td className="p-2 text-xs">
-                          {result.success ? (
-                            <pre className="bg-white p-2 rounded border">
-                              {JSON.stringify(result.data, null, 2)}
-                            </pre>
-                          ) : (
-                            <span className="text-red-600">{result.error}</span>
+                            <span className="text-gray-800">{result.nombre}</span>
                           )}
                         </td>
                       </tr>
@@ -304,8 +315,8 @@ export default function AFIPAutomation() {
 
         <div className="mt-6 text-center text-sm text-gray-600">
           <p>⚠️ Esta herramienta maneja información sensible. Úsala de forma responsable.</p>
+          <p className="mt-1">🔒 Las credenciales se procesan de forma segura y no se almacenan.</p>
         </div>
       </div>
     </div>
   );
-}
