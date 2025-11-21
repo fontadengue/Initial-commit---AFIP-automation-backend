@@ -34,6 +34,13 @@ function sendSSE(res, data) {
 }
 
 // ================================
+// FUNCIÓN HELPER: SLEEP
+// ================================
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+// ================================
 // FUNCIÓN: PROCESAR UN CLIENTE EN AFIP
 // ================================
 async function procesarClienteAFIP(page, cuit, clave) {
@@ -46,7 +53,7 @@ async function procesarClienteAFIP(page, cuit, clave) {
       timeout: 30000
     });
 
-    await page.waitForTimeout(1000);
+    await sleep(1000);
 
     // 2. INGRESAR CUIT
     console.log(`  → Ingresando CUIT: ${cuit}`);
@@ -59,13 +66,13 @@ async function procesarClienteAFIP(page, cuit, clave) {
     }
     
     await inputCuit[0].click();
-    await page.waitForTimeout(300);
+    await sleep(300);
     await inputCuit[0].type(cuit, { delay: 100 });
 
     // 3. CLICK EN SIGUIENTE
     console.log(`  → Click en Siguiente...`);
     
-    await page.waitForTimeout(500);
+    await sleep(500);
     const btnSiguiente = await page.$x('/html/body/main/div/div/div/div/div/div/form/input[2]');
     
     if (btnSiguiente.length === 0) {
@@ -80,13 +87,13 @@ async function procesarClienteAFIP(page, cuit, clave) {
     
     await page.waitForSelector('#F1\\:password', { timeout: 10000 });
     await page.click('#F1\\:password');
-    await page.waitForTimeout(300);
+    await sleep(300);
     await page.type('#F1\\:password', clave, { delay: 100 });
 
     // 5. CLICK EN INGRESAR
     console.log(`  → Click en Ingresar...`);
     
-    await page.waitForTimeout(500);
+    await sleep(500);
     const btnIngresar = await page.$x('/html/body/main/div/div/div/div/div/div/form/div/input[2]');
     
     if (btnIngresar.length === 0) {
@@ -97,7 +104,7 @@ async function procesarClienteAFIP(page, cuit, clave) {
     await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 30000 });
 
     // 6. ESPERAR A QUE CARGUE EL DASHBOARD
-    await page.waitForTimeout(2000);
+    await sleep(2000);
 
     // 7. EXTRAER EL NOMBRE DEL CONTRIBUYENTE
     console.log(`  → Extrayendo nombre del contribuyente...`);
@@ -153,7 +160,7 @@ app.post("/api/process", upload.single("excel"), async (req, res) => {
     // Leer Excel de entrada
     const workbook = XLSX.readFile(req.file.path);
     const sheet = workbook.Sheets[workbook.SheetNames[0]];
-    const rows = XLSX.utils.sheet_to_json(sheet, { header: 1 }); // Leer como array de arrays
+    const rows = XLSX.utils.sheet_to_json(sheet, { header: 1 });
 
     // Saltar primera fila si son headers
     const dataRows = rows.slice(1).filter(row => row.length >= 3);
@@ -190,9 +197,9 @@ app.post("/api/process", upload.single("excel"), async (req, res) => {
     for (let i = 0; i < dataRows.length; i++) {
       const row = dataRows[i];
       
-      const CUIT = String(row[0] || '').trim().replace(/\D/g, ''); // Columna A
-      const CLAVE = String(row[1] || '').trim(); // Columna B
-      const NUM_CLIENTE = String(row[2] || '').trim(); // Columna C
+      const CUIT = String(row[0] || '').trim().replace(/\D/g, '');
+      const CLAVE = String(row[1] || '').trim();
+      const NUM_CLIENTE = String(row[2] || '').trim();
 
       if (!CUIT || !CLAVE || !NUM_CLIENTE) {
         console.log(`⚠️  [${i + 1}/${total}] Fila incompleta, saltando...`);
@@ -233,7 +240,7 @@ app.post("/api/process", upload.single("excel"), async (req, res) => {
       if (i < dataRows.length - 1) {
         const espera = 2000 + Math.random() * 3000;
         console.log(`⏳ Esperando ${(espera / 1000).toFixed(1)}s...`);
-        await page.waitForTimeout(espera);
+        await sleep(espera);
       }
     }
 
@@ -246,7 +253,7 @@ app.post("/api/process", upload.single("excel"), async (req, res) => {
     // CREAR EXCEL DE SALIDA
     // ================================
     const datosExcel = [
-      ['Num de Cliente', 'Nombre del Cliente'], // Headers
+      ['Num de Cliente', 'Nombre del Cliente'],
       ...resultados.map(r => [r.numCliente, r.nombre])
     ];
 
