@@ -283,83 +283,42 @@ async function extraerDatos(page, cuit) {
     }
 
     // ============================================
-    // PASO: BUSCAR Y ACCEDER A MONOTRIBUTO
+    // PASO: NAVEGAR DIRECTAMENTE A MONOTRIBUTO
     // ============================================
-    console.log(`[${cuit}] Buscando sección de Monotributo...`);
+    console.log(`[${cuit}] Navegando a Monotributo...`);
 
     let montoFacturas = null;
+    let monotributoPage = null;
 
     try {
-      // Esperar y hacer click en el buscador
-      await page.waitForSelector('#buscadorInput', { timeout: 10000 });
-      await sleep(500);
-      
-      console.log(`[${cuit}] Haciendo click en el buscador...`);
-      await page.click('#buscadorInput');
-      await sleep(500);
+      // Crear una nueva pestaña y navegar directamente a Monotributo
+      console.log(`[${cuit}] Abriendo nueva pestaña para Monotributo...`);
+      monotributoPage = await browser.newPage();
 
-      // Tipear "Monotributo" en el buscador
-      console.log(`[${cuit}] Escribiendo "Monotributo" en el buscador...`);
-      await page.type('#buscadorInput', 'Monotributo', { delay: 100 });
-      await sleep(1000);
+      // Configurar la nueva pestaña
+      await monotributoPage.setViewport({ width: 1920, height: 1080 });
+      await monotributoPage.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
 
-      // Esperar a que aparezca la opción de Monotributo
-      console.log(`[${cuit}] Esperando resultados de búsqueda...`);
-      await page.waitForFunction(
-        () => {
-          const elementos = Array.from(document.querySelectorAll('p.small.text-muted'));
-          return elementos.some(el => el.textContent.trim() === 'Monotributo');
-        },
-        { timeout: 10000 }
-      );
-
-      await sleep(500);
-
-      // Hacer click en la opción "Monotributo" y esperar navegación
-      console.log(`[${cuit}] Haciendo click en opción Monotributo...`);
-      
-      // Configurar listener para nueva página/popup si se abre
-      const newPagePromise = new Promise(resolve => {
-        browser.once('targetcreated', async target => {
-          const newPage = await target.page();
-          if (newPage) resolve(newPage);
-        });
-        // Timeout de 3 segundos si no se abre nueva página
-        setTimeout(() => resolve(null), 3000);
+      // Navegar a la URL de Monotributo
+      console.log(`[${cuit}] Navegando a https://monotributo.afip.gob.ar/app/Inicio.aspx...`);
+      await monotributoPage.goto('https://monotributo.afip.gob.ar/app/Inicio.aspx', {
+        waitUntil: 'domcontentloaded',
+        timeout: 30000
       });
 
-      await page.evaluate(() => {
-        const elementos = Array.from(document.querySelectorAll('p.small.text-muted'));
-        const monotributo = elementos.find(el => el.textContent.trim() === 'Monotributo');
-        if (monotributo) {
-          monotributo.click();
-        }
-      });
+      console.log(`[${cuit}] ✓ Página de Monotributo cargada`);
 
-      // Verificar si se abrió una nueva página/pestaña
-      const newPage = await newPagePromise;
-      let targetPage = page;
+      // ESPERAR 45 SEGUNDOS para que cargue completamente el contenido
+      console.log(`[${cuit}] Esperando 45 segundos para que cargue el contenido...`);
+      await sleep(45000);
 
-      if (newPage) {
-        console.log(`[${cuit}] Se abrió nueva ventana/pestaña para Monotributo`);
-        targetPage = newPage;
-        await targetPage.waitForNavigation({ waitUntil: 'networkidle2', timeout: 15000 }).catch(() => {});
-      } else {
-        // Si no se abrió nueva página, esperar navegación en la página actual
-        console.log(`[${cuit}] Esperando navegación en la página actual...`);
-        await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 15000 }).catch(() => {});
-      }
-
-      // Esperar a que se cargue completamente
-      await sleep(3000);
-
-      console.log(`[${cuit}] URL actual: ${targetPage.url()}`);
+      console.log(`[${cuit}] Buscando elemento de facturación...`);
 
       // Intentar múltiples estrategias para encontrar el monto
       console.log(`[${cuit}] Buscando elemento con el monto de facturas...`);
 
       // Estrategia 1: Buscar por ID directo
-      montoFacturas = await targetPage.evaluate(() => {
+      montoFacturas = await monotributoPage.evaluate(() => {
         const elemento = document.querySelector('#spanFacturometroMontoMobile');
         return elemento ? elemento.textContent.trim() : null;
       });
@@ -367,14 +326,14 @@ async function extraerDatos(page, cuit) {
       // Estrategia 2: Si no se encontró, buscar por el div padre y luego el span
       if (!montoFacturas) {
         console.log(`[${cuit}] Intentando estrategia alternativa...`);
-        montoFacturas = await targetPage.evaluate(() => {
+        montoFacturas = await monotributoPage.evaluate(() => {
           const divMonto = document.querySelector('#divMontoFacturadoTextoMobile');
           if (divMonto) {
             // Buscar el siguiente elemento que contenga el monto
             let nextElement = divMonto.nextElementSibling;
             while (nextElement) {
-              const span = nextElement.querySelector('span[id*="Facturometro"]') || 
-                          nextElement.querySelector('span[id*="Monto"]');
+              const span = nextElement.querySelector('span[id*="Facturometro"]') ||
+                nextElement.querySelector('span[id*="Monto"]');
               if (span) {
                 return span.textContent.trim();
               }
@@ -388,7 +347,7 @@ async function extraerDatos(page, cuit) {
       // Estrategia 3: Buscar cualquier span que contenga "Facturometro" en su ID
       if (!montoFacturas) {
         console.log(`[${cuit}] Intentando búsqueda por patrón de ID...`);
-        montoFacturas = await targetPage.evaluate(() => {
+        montoFacturas = await monotributoPage.evaluate(() => {
           const spans = document.querySelectorAll('span[id*="Facturometro"], span[id*="facturometro"]');
           for (const span of spans) {
             const texto = span.textContent.trim();
@@ -404,7 +363,7 @@ async function extraerDatos(page, cuit) {
       // Estrategia 4: Buscar por texto visible que contenga "Monto facturado"
       if (!montoFacturas) {
         console.log(`[${cuit}] Intentando búsqueda por texto visible...`);
-        montoFacturas = await targetPage.evaluate(() => {
+        montoFacturas = await monotributoPage.evaluate(() => {
           const elementos = Array.from(document.querySelectorAll('*'));
           for (const el of elementos) {
             if (el.textContent.includes('Monto facturado')) {
@@ -435,10 +394,10 @@ async function extraerDatos(page, cuit) {
         console.log(`[${cuit}] ✓ Facturas Emitidas extraídas: ${montoFacturas}`);
       } else {
         console.warn(`[${cuit}] ⚠ No se pudo encontrar el monto de facturas`);
-        
+
         // Tomar screenshot para debugging
         try {
-          await targetPage.screenshot({
+          await monotributoPage.screenshot({
             path: `monotributo_${cuit}_${Date.now()}.png`,
             fullPage: true
           });
@@ -449,7 +408,7 @@ async function extraerDatos(page, cuit) {
 
         // Guardar HTML para análisis
         try {
-          const html = await targetPage.content();
+          const html = await monotributoPage.content();
           const fs = require('fs');
           fs.writeFileSync(`monotributo_${cuit}_${Date.now()}.html`, html);
           console.log(`[${cuit}] HTML guardado para debugging`);
@@ -458,14 +417,25 @@ async function extraerDatos(page, cuit) {
         }
       }
 
-      // Cerrar la nueva página si se abrió
-      if (newPage && newPage !== page) {
-        await newPage.close();
+      // Cerrar la pestaña de Monotributo
+      if (monotributoPage) {
+        await monotributoPage.close();
+        console.log(`[${cuit}] Pestaña de Monotributo cerrada`);
       }
 
     } catch (error) {
       console.error(`[${cuit}] ⚠ Error extrayendo datos de Monotributo:`, error.message);
-      
+
+      // Intentar cerrar la pestaña de Monotributo si se abrió
+      try {
+        if (monotributoPage) {
+          await monotributoPage.close();
+          console.log(`[${cuit}] Pestaña de Monotributo cerrada después de error`);
+        }
+      } catch (e) {
+        // Ignorar errores al cerrar pestañas
+      }
+
       // Tomar screenshot del error
       try {
         await page.screenshot({
@@ -475,7 +445,7 @@ async function extraerDatos(page, cuit) {
       } catch (e) {
         // Ignorar errores al tomar screenshot
       }
-      
+
       // No lanzamos el error, solo registramos y continuamos
       montoFacturas = 'Error al extraer';
     }
